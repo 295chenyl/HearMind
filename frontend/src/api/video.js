@@ -9,29 +9,21 @@ export function uploadVideo(file) {
   })
 }
 
-export function previewImportUrl(url, { cookieFile, cookieText } = {}) {
+export function previewImportUrl(url) {
   const formData = new FormData()
   formData.append('url', url)
-  if (cookieFile) formData.append('cookieFile', cookieFile)
-  if (cookieText) formData.append('cookieText', cookieText)
   return api.post('/videos/import-url/preview', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
 }
 
-export function importUrl(url, { cookieFile, cookieText, contentType = 'GENERAL' } = {}) {
+export function importUrl(url, { contentType = 'GENERAL' } = {}) {
   const formData = new FormData()
   formData.append('url', url)
   formData.append('contentType', contentType)
-  if (cookieFile) formData.append('cookieFile', cookieFile)
-  if (cookieText) formData.append('cookieText', cookieText)
   return api.post('/videos/import-url', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
-}
-
-export function getImportHealth() {
-  return api.get('/system/import-health')
 }
 
 export function listVideos() {

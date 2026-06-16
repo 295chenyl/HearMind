@@ -29,7 +29,11 @@ public class AppProperties {
     private String ytdlpCookiesBrowser = "edge";
     /** 可选：Netscape 格式 Cookie 文件，B 站导入优先使用（比读浏览器更稳定） */
     private String ytdlpCookiesFile = "../config/bilibili.cookies.txt";
+    /** SESSDATA 剩余天数低于此值时提示即将过期 */
+    private int bilibiliCookieWarnDays = 7;
     private long defaultUserId = 1L;
+    /** 是否启用相同内容去重（暂时默认关闭） */
+    private boolean dedupEnabled = false;
 
     @PostConstruct
     public void resolveToolPaths() {

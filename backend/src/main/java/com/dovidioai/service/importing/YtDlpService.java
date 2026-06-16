@@ -31,6 +31,7 @@ public class YtDlpService {
 
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
+    private final BilibiliCookieService bilibiliCookieService;
 
     public record DownloadResult(String title, String platform, String platformVideoId, Path filePath) {
     }
@@ -70,11 +71,6 @@ public class YtDlpService {
 
     public DownloadResult download(String url, Path outputDir, String fallbackTitle, String fallbackPlatform,
                                    String fallbackId) {
-        return download(url, outputDir, fallbackTitle, fallbackPlatform, fallbackId, null);
-    }
-
-    public DownloadResult download(String url, Path outputDir, String fallbackTitle, String fallbackPlatform,
-                                   String fallbackId, Path cookieFile) {
         try {
             Files.createDirectories(outputDir);
         } catch (IOException e) {
@@ -88,7 +84,7 @@ public class YtDlpService {
                 "--merge-output-format", "mp4",
                 "-o", template.toAbsolutePath().toString(),
                 url
-        ), cookieFile);
+        ), null);
 
         String output = runCommand(command, 30, TimeUnit.MINUTES, "yt-dlp 下载失败");
         Path downloaded;
@@ -118,14 +114,14 @@ public class YtDlpService {
         return probeMetadata(url, null);
     }
 
-    public MetadataResult probeMetadata(String url, Path cookieFile) {
-        List<String> command = buildCommand(url, List.of("--dump-single-json", "--no-playlist", url), cookieFile);
+    public MetadataResult probeMetadata(String url, Path ignored) {
+        List<String> command = buildCommand(url, List.of("--dump-single-json", "--no-playlist", url), null);
         String json = runCommand(command, 2, TimeUnit.MINUTES, "获取视频信息失败");
         return parseJsonMetadata(json);
     }
 
     public boolean isGlobalCookieConfigured() {
-        return resolveCookiesFile(null) != null;
+        return bilibiliCookieService.isGlobalCookieConfigured();
     }
 
     private List<String> buildCommand(String url, List<String> args, Path cookieOverride) {
@@ -145,33 +141,12 @@ public class YtDlpService {
         return command;
     }
 
-    private void addCookieArgs(List<String> command, Path cookieOverride) {
-        Path cookiesFile = resolveCookiesFile(cookieOverride);
+    private void addCookieArgs(List<String> command, Path ignored) {
+        Path cookiesFile = bilibiliCookieService.prepareYtDlpCookieFile();
         if (cookiesFile != null) {
             command.add("--cookies");
             command.add(cookiesFile.toAbsolutePath().toString());
-            return;
         }
-        String browser = appProperties.getYtdlpCookiesBrowser();
-        if (browser != null && !browser.isBlank()) {
-            command.add("--cookies-from-browser");
-            command.add(browser.trim());
-        }
-    }
-
-    private Path resolveCookiesFile(Path cookieOverride) {
-        if (cookieOverride != null && Files.isRegularFile(cookieOverride)) {
-            return cookieOverride;
-        }
-        String configured = appProperties.getYtdlpCookiesFile();
-        if (configured == null || configured.isBlank()) {
-            return null;
-        }
-        Path path = Path.of(configured.trim());
-        if (Files.isRegularFile(path)) {
-            return path;
-        }
-        return null;
     }
 
     private String runCommand(List<String> command, long timeout, TimeUnit unit, String errorPrefix) {
@@ -219,8 +194,7 @@ public class YtDlpService {
     }
 
     private String bilibiliCookieHelpMessage() {
-        return "请在导入时上传或粘贴 B 站 Cookie（Netscape 格式），详见 docs/COOKIE.md；"
-                + "也可由管理员配置 config/bilibili.cookies.txt 作为 fallback";
+        return "请由管理员在服务器配置 config/bilibili.cookies.txt（Netscape 格式，需含 .bilibili.com 的 SESSDATA），详见 docs/COOKIE.md";
     }
 
     private DownloadResult tryParseJsonMetadata(String output) {

@@ -50,6 +50,8 @@
 
     </el-header>
 
+    <CookieStatusBanner v-if="!isLoginPage && loggedIn" :refresh-key="cookieRefreshKey" />
+
     <el-main class="main">
 
       <router-view :key="routeKey" />
@@ -64,11 +66,13 @@
 
 <script setup>
 
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import { useRoute, useRouter } from 'vue-router'
 
 import { useAuth, useAuthListener } from './composables/useAuth'
+
+import CookieStatusBanner from './components/CookieStatusBanner.vue'
 
 
 
@@ -79,6 +83,8 @@ const router = useRouter()
 useAuthListener()
 
 const { loggedIn, userLabel, clearAuth, syncFromServer } = useAuth()
+
+const cookieRefreshKey = ref(0)
 
 onMounted(() => {
   syncFromServer()

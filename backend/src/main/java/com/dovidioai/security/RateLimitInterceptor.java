@@ -40,8 +40,14 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         if ("POST".equals(method) && pathMatcher.match("/api/videos/import-url", uri)) {
             return "import-url";
         }
-        if (pathMatcher.match("/api/videos/upload/**", uri)
-                || pathMatcher.match("/api/videos/upload", uri)) {
+        // 仅限制整文件上传与会话的创建/完成；分片 PUT 与状态查询不计入，避免大文件续传误触发限流
+        if ("POST".equals(method) && pathMatcher.match("/api/videos/upload", uri)) {
+            return "upload";
+        }
+        if ("POST".equals(method) && pathMatcher.match("/api/videos/upload/init", uri)) {
+            return "upload";
+        }
+        if ("POST".equals(method) && pathMatcher.match("/api/videos/upload/*/complete", uri)) {
             return "upload";
         }
         if ("POST".equals(method) && pathMatcher.match("/api/auth/login", uri)) {

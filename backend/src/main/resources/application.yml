@@ -44,8 +44,10 @@ app:
   ffprobe-path: ffprobe
   # B 站 Cookie：优先使用 cookies 文件（推荐）；无文件时再尝试从浏览器读取
   ytdlp-cookies-file: ../config/bilibili.cookies.txt
+  bilibili-cookie-warn-days: 7
   ytdlp-cookies-browser: edge
   default-user-id: 1
+  dedup-enabled: false
 
 auth:
   jwt-secret: dovideoai-jwt-secret-please-change-in-prod-32b

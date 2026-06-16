@@ -16,6 +16,7 @@ config/dashscope.key
 config/database.yml
 config/redis.yml
 config/bilibili.cookies.txt
+config/cookies.txt
 config/oss.yml
 .env
 *.log

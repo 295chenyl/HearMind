@@ -1,5 +1,6 @@
 package com.dovidioai.service;
 
+import com.dovidioai.config.AppProperties;
 import com.dovidioai.domain.entity.UploadSession;
 import com.dovidioai.domain.entity.Video;
 import com.dovidioai.domain.enums.SourceType;
@@ -42,6 +43,7 @@ public class ResumableUploadService {
     private final VideoStorageFacade storageFacade;
     private final VideoProcessingService processingService;
     private final CurrentUserService currentUserService;
+    private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -198,6 +200,9 @@ public class ResumableUploadService {
     }
 
     private Optional<Video> findReadyDuplicate(Long userId, String dedupKey) {
+        if (!appProperties.isDedupEnabled()) {
+            return Optional.empty();
+        }
         if (dedupKey == null || dedupKey.isBlank()) {
             return Optional.empty();
         }

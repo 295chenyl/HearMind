@@ -8,5 +8,11 @@ import lombok.Data;
 public class ImportHealthResponse {
 
     private boolean globalCookieConfigured;
+    /** @deprecated 使用 cookieStatus */
     private boolean bilibiliCookieHint;
+    private String cookieStatus;
+    private Long sessdataExpiresAtEpochSec;
+    private String sessdataExpiresAt;
+    private Integer daysUntilExpiry;
+    private String cookieMessage;
 }

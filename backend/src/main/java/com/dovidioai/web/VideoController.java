@@ -61,18 +61,14 @@ public class VideoController {
     }
 
     @PostMapping(value = "/import-url/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ImportUrlPreviewResponse previewImportUrl(@RequestParam("url") String url,
-                                                     @RequestParam(value = "cookieFile", required = false) MultipartFile cookieFile,
-                                                     @RequestParam(value = "cookieText", required = false) String cookieText) {
-        return videoService.previewImportUrl(url, cookieFile, cookieText);
+    public ImportUrlPreviewResponse previewImportUrl(@RequestParam("url") String url) {
+        return videoService.previewImportUrl(url);
     }
 
     @PostMapping(value = "/import-url", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public VideoResponse importUrl(@RequestParam("url") String url,
-                                   @RequestParam(value = "cookieFile", required = false) MultipartFile cookieFile,
-                                   @RequestParam(value = "cookieText", required = false) String cookieText,
                                    @RequestParam(value = "contentType", required = false, defaultValue = "GENERAL") String contentType) {
-        return videoService.importUrl(url, cookieFile, cookieText, parseContentType(contentType));
+        return videoService.importUrl(url, parseContentType(contentType));
     }
 
     @GetMapping

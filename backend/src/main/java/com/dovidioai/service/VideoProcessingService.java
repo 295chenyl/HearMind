@@ -14,7 +14,6 @@ import com.dovidioai.exception.BusinessException;
 import com.dovidioai.service.dashscope.DashScopeAsrService;
 import com.dovidioai.service.dashscope.DashScopeLlmService;
 import com.dovidioai.service.importing.DirectDownloadService;
-import com.dovidioai.service.importing.ImportCookieService;
 import com.dovidioai.service.importing.YtDlpService;
 import com.dovidioai.service.media.MediaProcessService;
 import com.dovidioai.service.storage.VideoStorageFacade;
@@ -42,7 +41,6 @@ public class VideoProcessingService {
     private final DashScopeAsrService asrService;
     private final DashScopeLlmService llmService;
     private final TranscriptIndexService transcriptIndexService;
-    private final ImportCookieService importCookieService;
     private final AppProperties appProperties;
     private final DashScopeProperties dashScopeProperties;
 
@@ -61,13 +59,12 @@ public class VideoProcessingService {
     public void process(Long videoId) {
         Video video = videoRepository.findById(videoId)
                 .orElseThrow(() -> new BusinessException("视频不存在"));
-        Path cookiePath = resolveCookiePath(video);
 
         try {
             markStatus(videoId, VideoStatus.DOWNLOADING);
 
             video = videoRepository.findById(videoId).orElseThrow();
-            Path mediaPath = resolveMediaPath(video, cookiePath);
+            Path mediaPath = resolveMediaPath(video);
             mediaProcessService.validateDuration(mediaPath);
 
             double duration = mediaProcessService.probeDurationSeconds(mediaPath);
@@ -120,28 +117,6 @@ public class VideoProcessingService {
         } catch (Exception e) {
             log.error("处理流水线失败 videoId={}", videoId, e);
             failVideo(videoId, e.getMessage());
-        } finally {
-            cleanupImportCookie(video, cookiePath);
-        }
-    }
-
-    private Path resolveCookiePath(Video video) {
-        if (video.getImportCookiePath() == null || video.getImportCookiePath().isBlank()) {
-            return null;
-        }
-        Path path = Path.of(video.getImportCookiePath());
-        return Files.isRegularFile(path) ? path : null;
-    }
-
-    private void cleanupImportCookie(Video video, Path cookiePath) {
-        if (cookiePath != null) {
-            importCookieService.deleteIfExists(cookiePath.toString());
-        }
-        if (video.getImportCookiePath() != null) {
-            videoRepository.findById(video.getId()).ifPresent(v -> {
-                v.setImportCookiePath(null);
-                videoRepository.save(v);
-            });
         }
     }
 
@@ -153,7 +128,7 @@ public class VideoProcessingService {
         });
     }
 
-    private Path resolveMediaPath(Video video, Path cookiePath) {
+    private Path resolveMediaPath(Video video) {
         if (video.getSourceType() == SourceType.UPLOAD) {
             if (video.getFilePath() == null) {
                 throw new BusinessException("上传文件路径为空");
@@ -182,8 +157,7 @@ public class VideoProcessingService {
                 dir,
                 video.getTitle(),
                 video.getPlatform(),
-                video.getPlatformVideoId(),
-                cookiePath
+                video.getPlatformVideoId()
         );
         video.setTitle(result.title());
         video.setPlatform(result.platform());
@@ -222,11 +196,6 @@ public class VideoProcessingService {
             video.setStatus(VideoStatus.FAILED);
             video.setErrorMessage(message != null ? message.substring(0, Math.min(message.length(), 2000)) : "未知错误");
             videoRepository.save(video);
-            if (video.getImportCookiePath() != null) {
-                importCookieService.deleteIfExists(video.getImportCookiePath());
-                video.setImportCookiePath(null);
-                videoRepository.save(video);
-            }
         });
     }
 

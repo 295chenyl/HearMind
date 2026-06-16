@@ -33,7 +33,7 @@ public class ChatService {
 
     public ChatResponse chat(Long videoId, ChatRequest request) {
         Video video = getReadyVideo(videoId);
-        transcriptRepository.findByVideoId(videoId)
+        Transcript transcript = transcriptRepository.findByVideoId(videoId)
                 .orElseThrow(() -> new BusinessException("转写内容不存在"));
 
         ChatSessionRecord session = resolveSession(videoId, request.getSessionId(), request.getMessage());
@@ -48,12 +48,16 @@ public class ChatService {
         }
 
         String summaryText = summaryRepository.findByVideoId(videoId).map(Summary::getContent).orElse("");
-        List<TranscriptIndexService.RetrievedChunk> chunks =
-                transcriptIndexService.search(videoId, request.getMessage(), 5);
+        boolean summaryStyle = llmService.isSummaryStyleQuestion(request.getMessage());
+        List<TranscriptIndexService.RetrievedChunk> chunks = summaryStyle
+                ? transcriptIndexService.search(videoId, "核心内容 要点 主题", 10)
+                : transcriptIndexService.search(videoId, request.getMessage(), 5);
+        String transcriptExcerpt = summaryStyle ? transcript.getFullText() : null;
 
         String reply = llmService.chatWithRagContext(
                 video.getTitle(),
                 summaryText,
+                transcriptExcerpt,
                 chunks,
                 history,
                 request.getMessage()
@@ -61,7 +65,7 @@ public class ChatService {
 
         chatMemoryStore.appendMessage(session.id(), "assistant", reply);
 
-        List<CitationResponse> citations = chunks.stream()
+        List<CitationResponse> citations = summaryStyle ? List.of() : chunks.stream()
                 .map(c -> CitationResponse.builder()
                         .startSec(c.startSec())
                         .endSec(c.endSec())

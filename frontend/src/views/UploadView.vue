@@ -98,30 +98,6 @@
           placeholder="粘贴视频链接，例如 B 站 / YouTube / mp4 直链"
         />
 
-        <div class="field-row">
-          <label class="field-label">内容类型</label>
-          <select v-model="contentType" class="eva-select">
-            <option value="GENERAL">通用</option>
-            <option value="CLASS">课堂</option>
-            <option value="MEETING">会议</option>
-            <option value="INTERVIEW">面试</option>
-          </select>
-        </div>
-
-        <div v-if="isBilibiliUrl" class="cookie-panel">
-          <div class="cookie-head">
-            <span>B 站 Cookie（可选，推荐）</span>
-            <a href="https://github.com/295chenyl/doVideoAi/blob/main/docs/COOKIE.md" target="_blank" rel="noopener">如何获取？</a>
-          </div>
-          <input type="file" accept=".txt,text/plain" @change="onCookieFileChange" />
-          <textarea
-            v-model="cookieText"
-            class="eva-textarea cookie-text"
-            rows="3"
-            placeholder="或粘贴 Netscape cookies.txt 内容"
-          />
-        </div>
-
         <div v-if="preview" class="preview-box">
           <p><strong>{{ preview.title }}</strong></p>
           <p v-if="preview.durationSec">时长约 {{ formatDuration(preview.durationSec) }}</p>
@@ -153,7 +129,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Link, UploadFilled } from '@element-plus/icons-vue'
@@ -164,16 +140,11 @@ const router = useRouter()
 const activeMode = ref(null)
 const selectedFile = ref(null)
 const url = ref('')
-const contentType = ref('GENERAL')
-const cookieFile = ref(null)
-const cookieText = ref('')
 const preview = ref(null)
 const uploading = ref(false)
 const importing = ref(false)
 const previewing = ref(false)
 const uploadProgress = ref(0)
-
-const isBilibiliUrl = computed(() => url.value.toLowerCase().includes('bilibili.com'))
 
 function toggleMode(mode) {
   activeMode.value = activeMode.value === mode ? null : mode
@@ -183,12 +154,8 @@ function handleFileChange(file) {
   selectedFile.value = file.raw
 }
 
-function navigateAfterVideo(data, deduplicated) {
-  if (deduplicated) {
-    ElMessage.info('检测到相同视频，已跳转到已有记录')
-  } else {
-    ElMessage.success('上传成功，正在处理')
-  }
+function navigateAfterVideo(data) {
+  ElMessage.success('任务已创建，正在处理')
   router.push(`/videos/${data.id}`)
 }
 
@@ -202,10 +169,10 @@ async function submitUpload() {
       const result = await resumableUpload(file, {
         onProgress: (p) => { uploadProgress.value = p }
       })
-      navigateAfterVideo(result.video, result.deduplicated)
+      navigateAfterVideo(result.video)
     } else {
       const { data } = await uploadVideo(file)
-      navigateAfterVideo(data, data.deduplicated)
+      navigateAfterVideo(data)
     }
   } catch (e) {
     ElMessage.error(e.message)
@@ -215,22 +182,11 @@ async function submitUpload() {
   }
 }
 
-function onCookieFileChange(event) {
-  cookieFile.value = event.target.files?.[0] || null
-}
-
-function formatDuration(sec) {
-  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
-}
-
 async function runPreview() {
   previewing.value = true
   preview.value = null
   try {
-    const { data } = await previewImportUrl(url.value.trim(), {
-      cookieFile: cookieFile.value,
-      cookieText: cookieText.value
-    })
+    const { data } = await previewImportUrl(url.value.trim())
     preview.value = data
   } catch (e) {
     ElMessage.error(e.message)
@@ -242,22 +198,18 @@ async function runPreview() {
 async function submitUrl() {
   importing.value = true
   try {
-    const { data } = await importUrl(url.value.trim(), {
-      cookieFile: cookieFile.value,
-      cookieText: cookieText.value,
-      contentType: contentType.value
-    })
-    if (data.deduplicated) {
-      ElMessage.info('该链接视频已存在，已跳转到已有记录')
-    } else {
-      ElMessage.success('导入任务已创建')
-    }
+    const { data } = await importUrl(url.value.trim())
+    ElMessage.success('导入任务已创建')
     router.push(`/videos/${data.id}`)
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
     importing.value = false
   }
+}
+
+function formatDuration(sec) {
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
 }
 </script>
 
@@ -593,6 +545,63 @@ async function submitUrl() {
 }
 
 .cookie-text {
+  margin-top: 10px;
+}
+
+.cookie-ok-hint {
+  font-size: 13px;
+  color: rgba(118, 255, 3, 0.85);
+  line-height: 1.5;
+}
+
+.cookie-maintain {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid rgba(106, 27, 154, 0.45);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.cookie-maintain summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+  user-select: none;
+}
+
+.maintain-hint {
+  margin: 10px 0 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  line-height: 1.5;
+}
+
+.maintain-status {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  border-left: 3px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.maintain-status.status-ok {
+  border-left-color: var(--eva-green);
+  color: rgba(118, 255, 3, 0.85);
+}
+
+.maintain-status.status-warn {
+  border-left-color: #ffcc80;
+  color: #ffcc80;
+}
+
+.maintain-status.status-expired,
+.maintain-status.status-missing {
+  border-left-color: var(--eva-red);
+  color: #ff8a80;
+}
+
+.maintain-save {
   margin-top: 10px;
 }
 

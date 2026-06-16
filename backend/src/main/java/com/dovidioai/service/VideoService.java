@@ -11,8 +11,9 @@ import com.dovidioai.domain.repository.TranscriptRepository;
 import com.dovidioai.domain.repository.VideoRepository;
 import com.dovidioai.exception.BusinessException;
 import com.dovidioai.service.dashscope.DashScopeLlmService;
+import com.dovidioai.config.AppProperties;
 import com.dovidioai.config.DashScopeProperties;
-import com.dovidioai.service.importing.ImportCookieService;
+import com.dovidioai.service.importing.BilibiliCookieService;
 import com.dovidioai.service.importing.YtDlpService;
 import com.dovidioai.service.storage.VideoStorageFacade;
 import com.dovidioai.support.TranscriptSegmentParser;
@@ -40,13 +41,14 @@ public class VideoService {
     private final VideoStorageFacade storageFacade;
     private final VideoProcessingService processingService;
     private final YtDlpService ytDlpService;
-    private final ImportCookieService importCookieService;
+    private final BilibiliCookieService bilibiliCookieService;
     private final CurrentUserService currentUserService;
     private final TranscriptSegmentParser segmentParser;
     private final DashScopeLlmService llmService;
     private final DashScopeProperties dashScopeProperties;
     private final TranscriptIndexService transcriptIndexService;
     private final RedisChatMemoryStore chatMemoryStore;
+    private final AppProperties appProperties;
 
     @Transactional
     public VideoResponse upload(MultipartFile file) {
@@ -77,36 +79,29 @@ public class VideoService {
         return toResponse(video, false);
     }
 
-    public ImportUrlPreviewResponse previewImportUrl(String url, MultipartFile cookieFile, String cookieText) {
+    public ImportUrlPreviewResponse previewImportUrl(String url) {
         String trimmed = url.trim();
-        Long userId = currentUserService.requireUserId();
-        Path cookiePath = importCookieService.saveTempCookie(userId, cookieFile, cookieText);
-        try {
-            if (ytDlpService.isDirectHttpUrl(trimmed)) {
-                return ImportUrlPreviewResponse.builder()
-                        .title(extractNameFromUrl(trimmed))
-                        .platform("direct")
-                        .warnings(buildCookieWarnings(trimmed, cookiePath))
-                        .build();
-            }
-            YtDlpService.MetadataResult meta = ytDlpService.probeMetadata(trimmed, cookiePath);
+        if (ytDlpService.isDirectHttpUrl(trimmed)) {
             return ImportUrlPreviewResponse.builder()
-                    .title(meta.title())
-                    .durationSec(meta.durationSec())
-                    .platform(meta.platform())
-                    .platformVideoId(meta.platformVideoId())
-                    .warnings(buildCookieWarnings(trimmed, cookiePath))
+                    .title(extractNameFromUrl(trimmed))
+                    .platform("direct")
+                    .warnings(buildCookieWarnings(trimmed))
                     .build();
-        } finally {
-            importCookieService.deleteIfExists(cookiePath != null ? cookiePath.toString() : null);
         }
+        YtDlpService.MetadataResult meta = ytDlpService.probeMetadata(trimmed);
+        return ImportUrlPreviewResponse.builder()
+                .title(meta.title())
+                .durationSec(meta.durationSec())
+                .platform(meta.platform())
+                .platformVideoId(meta.platformVideoId())
+                .warnings(buildCookieWarnings(trimmed))
+                .build();
     }
 
     @Transactional
-    public VideoResponse importUrl(String url, MultipartFile cookieFile, String cookieText, ContentType contentType) {
+    public VideoResponse importUrl(String url, ContentType contentType) {
         String trimmed = url.trim();
         Long userId = currentUserService.requireUserId();
-        Path cookiePath = importCookieService.saveTempCookie(userId, cookieFile, cookieText);
 
         String platform = ytDlpService.detectPlatform(trimmed);
         String platformVideoId = ytDlpService.extractPlatformVideoId(trimmed);
@@ -116,7 +111,6 @@ public class VideoService {
 
         Optional<Video> duplicate = findReadyDuplicate(userId, dedupKey);
         if (duplicate.isPresent()) {
-            importCookieService.deleteIfExists(cookiePath != null ? cookiePath.toString() : null);
             return toResponse(duplicate.get(), true);
         }
 
@@ -124,9 +118,6 @@ public class VideoService {
         video.setPlatform(platform);
         video.setPlatformVideoId(platformVideoId);
         video.setDedupKey(dedupKey);
-        if (cookiePath != null) {
-            video.setImportCookiePath(cookiePath.toAbsolutePath().toString());
-        }
         videoRepository.save(video);
         scheduleProcessing(video.getId());
         return toResponse(video, false);
@@ -294,6 +285,9 @@ public class VideoService {
     }
 
     private Optional<Video> findReadyDuplicate(Long userId, String dedupKey) {
+        if (!appProperties.isDedupEnabled()) {
+            return Optional.empty();
+        }
         if (dedupKey == null || dedupKey.isBlank()) {
             return Optional.empty();
         }
@@ -358,12 +352,21 @@ public class VideoService {
         });
     }
 
-    private List<String> buildCookieWarnings(String url, Path cookiePath) {
+    private List<String> buildCookieWarnings(String url) {
         List<String> warnings = new ArrayList<>();
-        if (url.toLowerCase().contains("bilibili.com")
-                && cookiePath == null
-                && !ytDlpService.isGlobalCookieConfigured()) {
-            warnings.add("未检测到 B 站 Cookie，部分视频可能导入失败，请参考 docs/COOKIE.md");
+        if (!url.toLowerCase().contains("bilibili.com")) {
+            return warnings;
+        }
+        BilibiliCookieService.CookieStatus global = bilibiliCookieService.getStatus();
+        if (!global.configured()
+                || BilibiliCookieService.STATUS_INVALID.equals(global.status())
+                || BilibiliCookieService.STATUS_MISSING.equals(global.status())) {
+            warnings.add(global.message());
+            return warnings;
+        }
+        if (BilibiliCookieService.STATUS_EXPIRED.equals(global.status())
+                || BilibiliCookieService.STATUS_WARN.equals(global.status())) {
+            warnings.add(global.message());
         }
         return warnings;
     }

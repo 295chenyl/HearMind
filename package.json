@@ -1,0 +1,12 @@
+{
+  "name": "hearmind",
+  "private": true,
+  "description": "听悟 HearMind — 根目录便捷启动脚本",
+  "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "build:frontend": "npm run build --prefix frontend",
+    "install:frontend": "npm install --prefix frontend",
+    "dev:backend": "mvn -f backend/pom.xml spring-boot:run"
+  }
+}

@@ -69,22 +69,29 @@
 
           <div v-show="activeMode === 'summary'" class="mode-panel">
             <div v-if="summary" class="summary-toolbar">
-              <select v-model="contentType" class="content-type-select" @change="onContentTypeChange">
-                <option value="GENERAL">通用摘要</option>
-                <option value="CLASS">课堂</option>
-                <option value="MEETING">会议</option>
-                <option value="INTERVIEW">面试</option>
-              </select>
-              <button type="button" class="toolbar-btn" :disabled="savingSummary" @click="saveSummary">
-                {{ savingSummary ? '保存中…' : '保存编辑' }}
-              </button>
-              <button type="button" class="toolbar-btn" :disabled="regenerating" @click="regenerate">
-                {{ regenerating ? '生成中…' : '重新生成' }}
-              </button>
-              <a class="toolbar-btn link" :href="exportUrl" target="_blank" rel="noopener">导出 Markdown</a>
+              <template v-if="!summaryEditing">
+                <button type="button" class="toolbar-btn" @click="startSummaryEdit">编辑</button>
+                <a class="toolbar-btn link" :href="exportUrl" target="_blank" rel="noopener">导出 Markdown</a>
+              </template>
+              <template v-else>
+                <button type="button" class="toolbar-btn" :disabled="savingSummary" @click="saveSummary">
+                  {{ savingSummary ? '保存中…' : '保存' }}
+                </button>
+                <button type="button" class="toolbar-btn" @click="cancelSummaryEdit">取消</button>
+              </template>
             </div>
             <el-scrollbar v-if="summary" class="scroll-area">
-              <textarea v-model="summaryDraft" class="summary-editor" rows="16" />
+              <div
+                v-if="!summaryEditing"
+                class="markdown-body"
+                v-html="summaryHtml"
+              />
+              <textarea
+                v-else
+                v-model="summaryDraft"
+                class="summary-editor"
+                rows="16"
+              />
             </el-scrollbar>
             <div v-else class="empty-panel">摘要生成中…</div>
           </div>
@@ -93,7 +100,7 @@
             <div ref="chatBoxRef" class="chat-stream">
               <div v-if="!messages.length" class="chat-empty">
                 <p>听悟 · 知识增强问答</p>
-                <span>基于摘要与转写片段检索回答，含时间戳引用</span>
+                <span>可问具体问题，或输入「总结/概括」获取结构化摘要；引用来源见下方片段</span>
               </div>
               <div
                 v-for="(msg, idx) in messages"
@@ -157,11 +164,10 @@ import {
   getTranscript,
   getVideo,
   getVideoStreamUrl,
-  regenerateSummary,
   retryVideo,
-  updateContentType,
   updateSummary
 } from '../api/video'
+import { renderMarkdown } from '../utils/markdown'
 
 const route = useRoute()
 const videoId = computed(() => route.params.id)
@@ -185,13 +191,13 @@ const retrying = ref(false)
 const chatBoxRef = ref(null)
 const videoRef = ref(null)
 const summaryDraft = ref('')
-const contentType = ref('GENERAL')
+const summaryEditing = ref(false)
 const savingSummary = ref(false)
-const regenerating = ref(false)
 let pollTimer = null
 
 const streamUrl = computed(() => getVideoStreamUrl(videoId.value))
 const exportUrl = computed(() => exportMarkdown(videoId.value))
+const summaryHtml = computed(() => renderMarkdown(summary.value?.content || ''))
 
 const statusMap = {
   PENDING: '等待中',
@@ -213,9 +219,6 @@ function statusText(status) {
 async function loadVideo() {
   const { data } = await getVideo(videoId.value)
   video.value = data
-  if (data.contentType) {
-    contentType.value = data.contentType
-  }
   return data
 }
 
@@ -282,6 +285,7 @@ async function loadExtras() {
   if (s.status === 'fulfilled') {
     summary.value = s.value.data
     summaryDraft.value = s.value.data.content || ''
+    summaryEditing.value = false
   }
   await loadChatHistory()
 }
@@ -397,40 +401,27 @@ function seekTo(startMs) {
   videoRef.value.play().catch(() => {})
 }
 
+function startSummaryEdit() {
+  summaryDraft.value = summary.value?.content || ''
+  summaryEditing.value = true
+}
+
+function cancelSummaryEdit() {
+  summaryDraft.value = summary.value?.content || ''
+  summaryEditing.value = false
+}
+
 async function saveSummary() {
   savingSummary.value = true
   try {
     const { data } = await updateSummary(videoId.value, summaryDraft.value)
     summary.value = data
+    summaryEditing.value = false
     ElMessage.success('摘要已保存')
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
     savingSummary.value = false
-  }
-}
-
-async function regenerate() {
-  regenerating.value = true
-  try {
-    const { data } = await regenerateSummary(videoId.value)
-    summary.value = data
-    summaryDraft.value = data.content || ''
-    ElMessage.success('摘要已重新生成')
-  } catch (e) {
-    ElMessage.error(e.message)
-  } finally {
-    regenerating.value = false
-  }
-}
-
-async function onContentTypeChange() {
-  try {
-    const { data } = await updateContentType(videoId.value, contentType.value)
-    video.value = data
-    ElMessage.success('内容类型已更新，重新生成摘要将使用新模板')
-  } catch (e) {
-    ElMessage.error(e.message)
   }
 }
 
@@ -442,7 +433,7 @@ watch(videoId, () => {
   messages.value = []
   sessionId.value = null
   summaryDraft.value = ''
-  contentType.value = 'GENERAL'
+  summaryEditing.value = false
   activeMode.value = 'transcript'
   refresh()
 })
@@ -662,15 +653,6 @@ onUnmounted(stopPoll)
   padding: 10px 16px 0;
   flex-wrap: wrap;
   align-items: center;
-}
-
-.content-type-select {
-  padding: 6px 10px;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(118, 255, 3, 0.3);
-  color: #fff;
-  border-radius: 2px;
-  font-size: 12px;
 }
 
 .toolbar-btn {

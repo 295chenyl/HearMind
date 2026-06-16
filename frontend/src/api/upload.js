@@ -36,17 +36,15 @@ export function completeUpload(sessionId) {
 }
 
 export async function resumableUpload(file, { onProgress, contentHash } = {}) {
-  const hash = contentHash || await computeFileSha256(file)
+  // 大文件跳过客户端全量 SHA-256，避免占满内存；服务端 complete 时仍会计算哈希
+  const hash = contentHash
+    ?? (file.size <= 200 * 1024 * 1024 ? await computeFileSha256(file) : null)
   const { data: initData } = await initUpload({
     filename: file.name,
     fileSize: file.size,
     chunkSize: CHUNK_SIZE,
     contentHash: hash
   })
-
-  if (initData.status === 'DEDUP') {
-    return { deduplicated: true, video: { id: initData.videoId } }
-  }
 
   const sessionId = initData.sessionId
   const totalChunks = initData.totalChunks
@@ -68,5 +66,5 @@ export async function resumableUpload(file, { onProgress, contentHash } = {}) {
 
   const { data: video } = await completeUpload(sessionId)
   if (onProgress) onProgress(100)
-  return { deduplicated: !!video.deduplicated, video }
+  return { video }
 }
