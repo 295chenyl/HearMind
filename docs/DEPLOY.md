@@ -95,3 +95,9 @@ sudo nginx -t && sudo systemctl reload nginx
 | `sudo systemctl restart dovidioai` | 重启后端 |
 
 存储目录：`/opt/dovidioai/backend/storage`（定期备份）。
+
+---
+
+## Docker 部署（推荐入门）
+
+若希望用 Docker Compose 一键上线并反学容器化，见 **[DOCKER_DEPLOY.md](DOCKER_DEPLOY.md)**。

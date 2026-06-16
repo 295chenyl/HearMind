@@ -14,7 +14,8 @@
 | [实现回溯](docs/RETROSPECTIVE.md) | Plan vs 实现偏差与修复记录 |
 | [CHANGELOG](CHANGELOG.md) | 版本迭代记录 |
 | [Cookie 指南](docs/COOKIE.md) | B 站链接导入 Cookie 获取 |
-| [部署指南](docs/DEPLOY.md) | ECS 上线（P5） |
+| [部署指南](docs/DEPLOY.md) | ECS 裸机上线（systemd） |
+| [Docker 部署](docs/DOCKER_DEPLOY.md) | ECS Docker Compose 一键上线 |
 
 ## 技术栈
 

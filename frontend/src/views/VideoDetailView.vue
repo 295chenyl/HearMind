@@ -100,7 +100,7 @@
             <div ref="chatBoxRef" class="chat-stream">
               <div v-if="!messages.length" class="chat-empty">
                 <p>听悟 · 知识增强问答</p>
-                <span>可问具体问题，或输入「总结/概括」获取结构化摘要；引用来源见下方片段</span>
+                <span>可问具体问题，或输入「总结/概括」获取结构化摘要</span>
               </div>
               <div
                 v-for="(msg, idx) in messages"
@@ -109,7 +109,8 @@
                 :class="msg.role"
               >
                 <div class="bubble">
-                  <div>{{ msg.content }}</div>
+                  <div v-if="msg.role === 'assistant'" class="markdown-body chat-markdown" v-html="renderMarkdown(msg.content)" />
+                  <div v-else class="bubble-text">{{ msg.content }}</div>
                   <div v-if="msg.citations?.length" class="citations">
                     <button
                       v-for="(c, cIdx) in msg.citations"
@@ -784,8 +785,49 @@ onUnmounted(stopPoll)
   border-radius: 12px;
   line-height: 1.65;
   font-size: 14px;
-  white-space: pre-wrap;
   word-break: break-word;
+}
+
+.bubble-text {
+  white-space: pre-wrap;
+}
+
+.chat-markdown :deep(p) {
+  margin: 0.4em 0;
+}
+
+.chat-markdown :deep(p:first-child) {
+  margin-top: 0;
+}
+
+.chat-markdown :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.chat-markdown :deep(ul),
+.chat-markdown :deep(ol) {
+  margin: 0.4em 0;
+  padding-left: 1.4em;
+}
+
+.chat-markdown :deep(code) {
+  padding: 0.1em 0.35em;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 2px;
+  font-size: 0.92em;
+}
+
+.chat-markdown :deep(pre) {
+  margin: 0.5em 0;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.chat-markdown :deep(pre code) {
+  padding: 0;
+  background: transparent;
 }
 
 .bubble-row.user .bubble {

@@ -114,7 +114,7 @@ public class VideoService {
             return toResponse(duplicate.get(), true);
         }
 
-        Video video = createBaseVideo(SourceType.URL, trimmed, "链接导入视频", contentType);
+        Video video = createBaseVideo(SourceType.URL, trimmed, resolveImportTitle(trimmed), contentType);
         video.setPlatform(platform);
         video.setPlatformVideoId(platformVideoId);
         video.setDedupKey(dedupKey);
@@ -387,6 +387,19 @@ public class VideoService {
             return "upload.bin";
         }
         return name.replaceAll("[\\\\/:*?\"<>|]", "_");
+    }
+
+    private String resolveImportTitle(String url) {
+        String trimmed = url.trim();
+        if (ytDlpService.isDirectHttpUrl(trimmed)) {
+            String name = extractNameFromUrl(trimmed);
+            return name != null && !name.isBlank() ? name : "链接导入视频";
+        }
+        YtDlpService.MetadataResult meta = ytDlpService.probeMetadata(trimmed);
+        if (meta.title() != null && !meta.title().isBlank()) {
+            return meta.title().trim();
+        }
+        return "链接导入视频";
     }
 
     private String extractNameFromUrl(String url) {
