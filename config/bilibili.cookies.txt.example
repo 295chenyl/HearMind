@@ -1,0 +1,9 @@
+# Netscape HTTP Cookie File
+# 1. 浏览器安装插件「Get cookies.txt LOCALLY」
+# 2. 登录 https://www.bilibili.com
+# 3. 导出 bilibili.com 域名的 Cookie
+# 4. 复制内容到 config/bilibili.cookies.txt（删除本说明行，保留 Netscape 格式行）
+#
+# 示例格式（值为占位符，需替换为你自己的）：
+# .bilibili.com	TRUE	/	FALSE	1893456000	SESSDATA	your_sessdata_here
+# .bilibili.com	TRUE	/	FALSE	1893456000	bili_jct	your_bili_jct_here

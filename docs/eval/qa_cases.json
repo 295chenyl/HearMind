@@ -1,0 +1,62 @@
+[
+  {
+    "videoId": 0,
+    "question": "视频后半段讲了什么？",
+    "expectContainsCitation": true,
+    "expectAnswerPattern": ".+"
+  },
+  {
+    "videoId": 0,
+    "question": "请总结三个关键要点",
+    "expectContainsCitation": true,
+    "expectAnswerPattern": ".+"
+  },
+  {
+    "videoId": 0,
+    "question": "视频中是否提到某个不存在的话题 XYZABC？",
+    "expectContainsCitation": false,
+    "expectAnswerPattern": "未提及|没有|不存在"
+  },
+  {
+    "videoId": 0,
+    "question": "第 20 分钟左右讨论了什么？",
+    "expectContainsCitation": true,
+    "expectAnswerPattern": ".+"
+  },
+  {
+    "videoId": 0,
+    "question": "有哪些行动建议或结论？",
+    "expectContainsCitation": true,
+    "expectAnswerPattern": ".+"
+  },
+  {
+    "videoId": 0,
+    "question": "主讲人是谁？",
+    "expectContainsCitation": false,
+    "expectAnswerPattern": "未提及|没有|无法"
+  },
+  {
+    "videoId": 0,
+    "question": "请用一句话概括视频主题",
+    "expectContainsCitation": true,
+    "expectAnswerPattern": ".+"
+  },
+  {
+    "videoId": 0,
+    "question": "有没有提到具体数字或数据？",
+    "expectContainsCitation": true,
+    "expectAnswerPattern": ".+"
+  },
+  {
+    "videoId": 0,
+    "question": "视频开头介绍了什么背景？",
+    "expectContainsCitation": true,
+    "expectAnswerPattern": ".+"
+  },
+  {
+    "videoId": 0,
+    "question": "是否涉及量子计算机的详细原理？",
+    "expectContainsCitation": false,
+    "expectAnswerPattern": "未提及|没有|不存在"
+  }
+]

@@ -1,0 +1,31 @@
+# Backend
+backend/target/
+backend/.idea/
+backend/*.iml
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Storage & env（不上传视频、分片缓存、密钥）
+/storage/
+/backend/storage/
+dump.rdb
+hearmind.txt
+config/dashscope.key
+config/database.yml
+config/redis.yml
+config/bilibili.cookies.txt
+config/oss.yml
+.env
+*.log
+
+# 大媒体文件（本地测试产物）
+*.mp4
+*.mp3
+*.wav
+*.part
+
+# IDE
+.vscode/
+.idea/

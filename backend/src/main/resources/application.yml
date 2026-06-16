@@ -1,0 +1,94 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: hearmind
+  config:
+    import: optional:file:../config/database.yml,optional:file:../config/oss.yml,optional:file:../config/redis.yml
+  datasource:
+    url: jdbc:mysql://localhost:3306/dovidioai?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8&createDatabaseIfNotExist=true
+    username: root
+    password: "123456"
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        type:
+          preferred_enum_jdbc_type: VARCHAR
+  flyway:
+    enabled: true
+  servlet:
+    multipart:
+      max-file-size: 2048MB
+      max-request-size: 2048MB
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 3s
+
+# 视频文件存储：当前阶段固定本地，OSS 暂不启用（上线前可在 config/oss.yml 开启）
+oss:
+  enabled: false
+
+app:
+  storage-path: ./storage
+  max-duration-seconds: 3000
+  max-file-size-bytes: 2147483648
+  ytdlp-path: yt-dlp
+  ffmpeg-path: ffmpeg
+  ffprobe-path: ffprobe
+  # B 站 Cookie：优先使用 cookies 文件（推荐）；无文件时再尝试从浏览器读取
+  ytdlp-cookies-file: ../config/bilibili.cookies.txt
+  ytdlp-cookies-browser: edge
+  default-user-id: 1
+
+auth:
+  jwt-secret: dovideoai-jwt-secret-please-change-in-prod-32b
+  jwt-expire-days: 7
+
+retry:
+  max-attempts: 3
+  initial-delay-ms: 1000
+  multiplier: 2.0
+  max-delay-ms: 10000
+
+rate-limit:
+  enabled: true
+  rules:
+    chat:
+      capacity: 10
+      refill-per-second: 0.5
+    import-url:
+      capacity: 5
+      refill-per-second: 0.2
+    upload:
+      capacity: 5
+      refill-per-second: 0.2
+    login:
+      capacity: 10
+      refill-per-second: 0.3
+    default:
+      capacity: 60
+      refill-per-second: 10
+
+chat:
+  redis:
+    ttl-days: 30
+
+dashscope:
+  # Key 文件路径（相对路径以启动后端时的工作目录为准）
+  key-file: ../config/dashscope.key
+  # 方式2：直接写在这里，或环境变量 DASHSCOPE_API_KEY（优先级更高）
+  api-key: ${DASHSCOPE_API_KEY:}
+  asr-model: paraformer-v2
+  llm-model: qwen-plus
+  api-base-url: https://dashscope.aliyuncs.com/api/v1
+
+logging:
+  level:
+    com.dovidioai: INFO

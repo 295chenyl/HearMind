@@ -1,0 +1,20 @@
+[Unit]
+Description=dovideoAi Spring Boot Backend
+After=network.target mysql.service redis.service
+
+[Service]
+Type=simple
+User=dovidioai
+WorkingDirectory=/opt/dovidioai/backend
+Environment=JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+Environment=DASHSCOPE_API_KEY=
+Environment=SPRING_DATASOURCE_URL=jdbc:mysql://127.0.0.1:3306/dovidioai?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+Environment=SPRING_DATASOURCE_USERNAME=dovidioai
+Environment=SPRING_DATASOURCE_PASSWORD=change-me
+Environment=AUTH_JWT_SECRET=change-me-in-production-32chars-min
+ExecStart=/usr/bin/java -jar /opt/dovidioai/backend/dovidioai-backend.jar
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
