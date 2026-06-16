@@ -1,9 +1,9 @@
 .git/
 backend/target/
-backend/storage/
+/backend/storage/
 frontend/node_modules/
 frontend/dist/
-storage/
+/storage/
 *.mp4
 *.wav
 config/dashscope.key

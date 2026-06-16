@@ -9,8 +9,6 @@ import org.springframework.context.annotation.Configuration;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -55,20 +53,58 @@ public class AppProperties {
     }
 
     private String findOnPath(String name) {
-        String pathEnv = System.getenv("Path");
+        String pathEnv = System.getenv("PATH");
         if (pathEnv == null) {
-            return null;
+            pathEnv = System.getenv("Path");
         }
-        String exeName = name.endsWith(".exe") ? name : name + ".exe";
-        for (String dir : pathEnv.split(";")) {
-            if (dir.isBlank()) {
-                continue;
-            }
-            Path candidate = Path.of(dir.trim(), exeName);
-            if (Files.isRegularFile(candidate)) {
-                return candidate.toAbsolutePath().toString();
+        if (pathEnv != null) {
+            boolean windows = isWindows();
+            String separator = windows ? ";" : ":";
+            String exeName = windows && !name.endsWith(".exe") ? name + ".exe" : name;
+            for (String dir : pathEnv.split(separator)) {
+                if (dir.isBlank()) {
+                    continue;
+                }
+                Path candidate = Path.of(dir.trim(), exeName);
+                if (Files.isRegularFile(candidate)) {
+                    return candidate.toAbsolutePath().toString();
+                }
             }
         }
+        if (isWindows()) {
+            return findOnPathWindows(name);
+        }
+        return findOnPathUnix(name);
+    }
+
+    private boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase().contains("win");
+    }
+
+    private String findOnPathUnix(String name) {
+        try {
+            Process process = new ProcessBuilder("sh", "-c", "command -v " + name)
+                    .redirectErrorStream(true).start();
+            if (!process.waitFor(10, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                return null;
+            }
+            if (process.exitValue() != 0) {
+                return null;
+            }
+            try (var reader = process.inputReader()) {
+                String line = reader.readLine();
+                if (line != null && Files.isRegularFile(Path.of(line.trim()))) {
+                    return line.trim();
+                }
+            }
+        } catch (IOException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return null;
+    }
+
+    private String findOnPathWindows(String name) {
         try {
             Process process = new ProcessBuilder("where.exe", name).redirectErrorStream(true).start();
             if (!process.waitFor(10, TimeUnit.SECONDS)) {

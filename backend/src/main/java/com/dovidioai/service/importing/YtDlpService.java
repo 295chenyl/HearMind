@@ -2,6 +2,7 @@ package com.dovidioai.service.importing;
 
 import com.dovidioai.config.AppProperties;
 import com.dovidioai.exception.BusinessException;
+import com.dovidioai.service.media.MediaProcessService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -28,10 +29,14 @@ public class YtDlpService {
     private static final Pattern HTTP_URL = Pattern.compile("^https?://", Pattern.CASE_INSENSITIVE);
     private static final Pattern BILIBILI_BV = Pattern.compile("(BV[a-zA-Z0-9]+)", Pattern.CASE_INSENSITIVE);
     private static final Pattern YOUTUBE_ID = Pattern.compile("(?:v=|youtu\\.be/|/shorts/)([a-zA-Z0-9_-]{6,})");
+    /** 优先合并音视频；失败时回退到单文件含音轨格式 */
+    private static final String FORMAT_MERGE = "bestvideo*+bestaudio/best[acodec!=none]/best";
+    private static final String FORMAT_FALLBACK = "best[acodec!=none]/best";
 
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
     private final BilibiliCookieService bilibiliCookieService;
+    private final MediaProcessService mediaProcessService;
 
     public record DownloadResult(String title, String platform, String platformVideoId, Path filePath) {
     }
@@ -78,23 +83,21 @@ public class YtDlpService {
         }
 
         Path template = outputDir.resolve("source.%(ext)s");
-        List<String> command = buildCommand(url, List.of(
-                "--no-playlist",
-                "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-                "--merge-output-format", "mp4",
-                "-o", template.toAbsolutePath().toString(),
-                url
-        ), null);
-
-        String output = runCommand(command, 30, TimeUnit.MINUTES, "yt-dlp 下载失败");
-        Path downloaded;
-        try {
-            downloaded = findDownloadedFile(outputDir);
-        } catch (IOException e) {
-            throw new BusinessException("查找下载文件失败: " + e.getMessage());
+        Path downloaded = downloadWithFormat(url, outputDir, template, FORMAT_MERGE);
+        if (!mediaProcessService.hasAudioStream(downloaded)) {
+            log.warn("yt-dlp 合并结果无音轨，尝试回退格式: url={}", url);
+            try {
+                Files.deleteIfExists(downloaded);
+            } catch (IOException e) {
+                throw new BusinessException("清理无效下载文件失败: " + e.getMessage());
+            }
+            downloaded = downloadWithFormat(url, outputDir, template, FORMAT_FALLBACK);
+        }
+        if (!mediaProcessService.hasAudioStream(downloaded)) {
+            throw new BusinessException("下载的视频无音轨，请换链接或改为本地上传");
         }
 
-        DownloadResult meta = tryParseJsonMetadata(output);
+        DownloadResult meta = null;
         String title = meta != null && meta.title() != null ? meta.title() : fallbackTitle;
         String platform = meta != null && meta.platform() != null ? meta.platform() : fallbackPlatform;
         String id = meta != null && meta.platformVideoId() != null ? meta.platformVideoId() : fallbackId;
@@ -124,6 +127,30 @@ public class YtDlpService {
         return bilibiliCookieService.isGlobalCookieConfigured();
     }
 
+    private Path downloadWithFormat(String url, Path outputDir, Path template, String format) {
+        List<String> command = buildCommand(url, List.of(
+                "--no-playlist",
+                "-f", format,
+                "--merge-output-format", "mp4",
+                "-o", template.toAbsolutePath().toString(),
+                url
+        ), null);
+        runCommand(command, 30, TimeUnit.MINUTES, "yt-dlp 下载失败");
+        try {
+            return findDownloadedFile(outputDir);
+        } catch (IOException e) {
+            throw new BusinessException("查找下载文件失败: " + e.getMessage());
+        }
+    }
+
+    private void addFfmpegLocation(List<String> command) {
+        String ffmpeg = appProperties.getFfmpegPath();
+        if (ffmpeg != null && !ffmpeg.isBlank()) {
+            command.add("--ffmpeg-location");
+            command.add(ffmpeg);
+        }
+    }
+
     private List<String> buildCommand(String url, List<String> args, Path cookieOverride) {
         List<String> command = new ArrayList<>();
         command.add(appProperties.getYtdlpPath());
@@ -131,6 +158,7 @@ public class YtDlpService {
         command.add("--ignore-config");
 
         addCookieArgs(command, cookieOverride);
+        addFfmpegLocation(command);
 
         if (url != null && url.toLowerCase().contains("bilibili.com")) {
             command.add("--referer");

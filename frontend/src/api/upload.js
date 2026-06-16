@@ -5,6 +5,10 @@ const CHUNK_SIZE = 5 * 1024 * 1024
 export { CHUNK_SIZE }
 
 async function computeFileSha256(file) {
+  // Web Crypto 仅在 HTTPS 或 localhost 可用；ECS 用 HTTP 访问时需跳过客户端哈希
+  if (!globalThis.crypto?.subtle?.digest) {
+    return null
+  }
   const buffer = await file.arrayBuffer()
   const hash = await crypto.subtle.digest('SHA-256', buffer)
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('')

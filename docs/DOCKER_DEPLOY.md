@@ -39,17 +39,27 @@ mysql:3306    redis:6379
 
 ---
 
-## 二、登录 ECS 并安装 Docker（若未预装）
+## 二、登录 ECS
 
 ```bash
-ssh root@<ECS公网IP>
-
-# 若实例未预装 Docker
-cd /opt
-git clone <你的仓库地址> hearmind
-cd hearmind
-sudo bash deploy/install-docker-ubuntu.sh
+ssh root@120.55.181.0
 ```
+
+**GitHub 在国内 ECS 上常超时**，不要依赖 `git clone https://github.com/...`。
+
+### 推荐：从本机 Windows 一键上传部署
+
+在本机项目根目录 PowerShell 执行（需已能 SSH 登录 ECS）：
+
+```powershell
+.\deploy\deploy.ps1
+# 或
+.\deploy\upload-to-ecs.ps1 -EcsIp 120.55.181.0
+```
+
+脚本会：打包代码 → scp 上传 → 上传 `config/dashscope.key` 与 `bilibili.cookies.txt` → 远程 `docker compose up --build`。
+
+### 或：手动安装 Docker（若未预装）
 
 若使用非 root 用户，安装后加入 docker 组并重新登录：
 
