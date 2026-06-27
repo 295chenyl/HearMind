@@ -15,6 +15,19 @@ HearMind 是一个集成用户鉴权、视频上传、音频提取及 AI 自动�
 项目预览
 -----------------------------
 
+<img width="2718" height="1670" alt="20260627-0949-19 3066738-compressed" src="https://github.com/user-attachments/assets/d3a3bbce-73ac-4bd3-831c-04590675d3cd" />
+
+
+
+<img width="1465" height="1535" alt="image" src="https://github.com/user-attachments/assets/76a80e40-5d67-4892-97cf-2fd555ab0dd1" />
+
+<img width="3119" height="1141" alt="image" src="https://github.com/user-attachments/assets/0b9519d4-6c13-491a-9f92-f604a60f527d" />
+
+<img width="3187" height="1692" alt="image" src="https://github.com/user-attachments/assets/ef6af448-e9e4-4f0a-9388-8b22a51c8a6e" />
+
+
+<img width="3187" height="1692" alt="image" src="https://github.com/user-attachments/assets/db6f5882-b624-45d4-aa03-38854a03ae86" />
+
 
 
 
