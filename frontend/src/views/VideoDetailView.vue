@@ -124,7 +124,7 @@
                   </div>
                 </div>
               </div>
-              <div v-if="chatting" class="bubble-row assistant">
+              <div v-if="chatting && !streamReplyStarted" class="bubble-row assistant">
                 <div class="bubble typing">思考中…</div>
               </div>
             </div>
@@ -158,7 +158,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  chat,
+  chatStream,
   exportMarkdown,
   getChatHistory,
   getSummary,
@@ -188,6 +188,7 @@ const question = ref('')
 const messages = ref([])
 const sessionId = ref(null)
 const chatting = ref(false)
+const streamReplyStarted = ref(false)
 const retrying = ref(false)
 const chatBoxRef = ref(null)
 const videoRef = ref(null)
@@ -195,6 +196,7 @@ const summaryDraft = ref('')
 const summaryEditing = ref(false)
 const savingSummary = ref(false)
 let pollTimer = null
+let chatAbortController = null
 
 const streamUrl = computed(() => getVideoStreamUrl(videoId.value))
 const exportUrl = computed(() => exportMarkdown(videoId.value))
@@ -351,32 +353,68 @@ async function retryProcess() {
 async function sendMessage() {
   if (!question.value.trim()) return
   chatting.value = true
+  streamReplyStarted.value = false
   const content = question.value.trim()
   question.value = ''
+  const messageStartIndex = messages.value.length
   messages.value.push({ role: 'user', content })
   await nextTick()
   scrollChat()
 
+  let assistantMessage = null
+  let streamCitations = []
+  const controller = new AbortController()
+  chatAbortController = controller
+
   try {
-    const { data } = await chat(videoId.value, content, sessionId.value)
-    sessionId.value = data.sessionId
-    localStorage.setItem(sessionStorageKey(), String(data.sessionId))
-    messages.value = data.history.map((m, i) => ({
-      role: m.role,
-      content: m.content,
-      citations: i === data.history.length - 1 && m.role === 'assistant'
-        ? (data.citations || [])
-        : (m.citations || [])
-    }))
-    saveCitations(data.citations)
+    await chatStream(videoId.value, content, sessionId.value, (event, data) => {
+      if (event === 'meta') {
+        sessionId.value = data.sessionId
+        streamCitations = data.citations || []
+        localStorage.setItem(sessionStorageKey(), String(data.sessionId))
+        return
+      }
+      if (event === 'delta') {
+        if (!assistantMessage) {
+          assistantMessage = { role: 'assistant', content: '', citations: streamCitations }
+          messages.value.push(assistantMessage)
+          streamReplyStarted.value = true
+        }
+        assistantMessage.content += data.content || ''
+        nextTick(scrollChat)
+        return
+      }
+      if (event === 'done') {
+        applyCompletedChat(data)
+      }
+    }, { signal: controller.signal })
     await nextTick()
     scrollChat()
   } catch (e) {
-    ElMessage.error(e.message)
-    messages.value.pop()
+    messages.value.splice(messageStartIndex)
+    if (e.name !== 'AbortError') {
+      ElMessage.error(e.message)
+    }
   } finally {
+    if (chatAbortController === controller) {
+      chatAbortController = null
+    }
     chatting.value = false
+    streamReplyStarted.value = false
   }
+}
+
+function applyCompletedChat(data) {
+  sessionId.value = data.sessionId
+  localStorage.setItem(sessionStorageKey(), String(data.sessionId))
+  messages.value = data.history.map((message, index) => ({
+    role: message.role,
+    content: message.content,
+    citations: index === data.history.length - 1 && message.role === 'assistant'
+      ? (data.citations || [])
+      : (message.citations || [])
+  }))
+  saveCitations(data.citations)
 }
 
 function scrollChat() {
@@ -431,6 +469,7 @@ watch(activeMode, (mode) => {
 })
 
 watch(videoId, () => {
+  chatAbortController?.abort()
   messages.value = []
   sessionId.value = null
   summaryDraft.value = ''
@@ -440,7 +479,10 @@ watch(videoId, () => {
 })
 
 onMounted(refresh)
-onUnmounted(stopPoll)
+onUnmounted(() => {
+  chatAbortController?.abort()
+  stopPoll()
+})
 </script>
 
 <style scoped>

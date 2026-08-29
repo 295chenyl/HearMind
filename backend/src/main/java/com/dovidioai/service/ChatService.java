@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 @Service
 @RequiredArgsConstructor
@@ -32,20 +33,25 @@ public class ChatService {
     private final CurrentUserService currentUserService;
 
     public ChatResponse chat(Long videoId, ChatRequest request) {
+        ChatStreamContext context = prepareChatStream(videoId, request);
+        String reply = llmService.chatWithRagContext(
+                context.videoTitle(),
+                context.summaryText(),
+                context.transcriptExcerpt(),
+                context.chunks(),
+                context.history(),
+                context.userMessage()
+        );
+        return completeChat(context, reply);
+    }
+
+    public ChatStreamContext prepareChatStream(Long videoId, ChatRequest request) {
         Video video = getReadyVideo(videoId);
         Transcript transcript = transcriptRepository.findByVideoId(videoId)
                 .orElseThrow(() -> new BusinessException("转写内容不存在"));
 
         ChatSessionRecord session = resolveSession(videoId, request.getSessionId(), request.getMessage());
         chatMemoryStore.appendMessage(session.id(), "user", request.getMessage());
-
-        List<ChatMessageResponse> previous = chatMemoryStore.listMessagesBeforeLast(session.id());
-        List<Map<String, String>> history = new ArrayList<>();
-        for (ChatMessageResponse msg : previous) {
-            if ("user".equals(msg.getRole()) || "assistant".equals(msg.getRole())) {
-                history.add(Map.of("role", msg.getRole(), "content", msg.getContent()));
-            }
-        }
 
         String summaryText = summaryRepository.findByVideoId(videoId).map(Summary::getContent).orElse("");
         boolean summaryStyle = llmService.isSummaryStyleQuestion(request.getMessage());
@@ -54,31 +60,63 @@ public class ChatService {
                 : transcriptIndexService.search(videoId, request.getMessage(), 5);
         String transcriptExcerpt = summaryStyle ? transcript.getFullText() : null;
 
-        String reply = llmService.chatWithRagContext(
+        return new ChatStreamContext(
+                session.id(),
                 video.getTitle(),
                 summaryText,
                 transcriptExcerpt,
-                chunks,
-                history,
-                request.getMessage()
+                List.copyOf(chunks),
+                buildHistory(session.id()),
+                request.getMessage(),
+                buildCitations(chunks, summaryStyle)
         );
+    }
 
-        chatMemoryStore.appendMessage(session.id(), "assistant", reply);
+    public ChatResponse streamChat(ChatStreamContext context, Consumer<String> chunkConsumer) {
+        String reply = llmService.chatWithRagContextStream(
+                context.videoTitle(),
+                context.summaryText(),
+                context.transcriptExcerpt(),
+                context.chunks(),
+                context.history(),
+                context.userMessage(),
+                chunkConsumer
+        );
+        return completeChat(context, reply);
+    }
 
-        List<CitationResponse> citations = summaryStyle ? List.of() : chunks.stream()
+    private ChatResponse completeChat(ChatStreamContext context, String reply) {
+        chatMemoryStore.appendMessage(context.sessionId(), "assistant", reply);
+        return ChatResponse.builder()
+                .sessionId(context.sessionId())
+                .reply(reply)
+                .citations(context.citations())
+                .history(chatMemoryStore.listMessages(context.sessionId()))
+                .build();
+    }
+
+    private List<Map<String, String>> buildHistory(Long sessionId) {
+        List<Map<String, String>> history = new ArrayList<>();
+        for (ChatMessageResponse message : chatMemoryStore.listMessagesBeforeLast(sessionId)) {
+            if ("user".equals(message.getRole()) || "assistant".equals(message.getRole())) {
+                history.add(Map.of("role", message.getRole(), "content", message.getContent()));
+            }
+        }
+        return List.copyOf(history);
+    }
+
+    private List<CitationResponse> buildCitations(List<TranscriptIndexService.RetrievedChunk> chunks,
+                                                   boolean summaryStyle) {
+        if (summaryStyle) {
+            return List.of();
+        }
+        return chunks.stream()
                 .map(c -> CitationResponse.builder()
                         .startSec(c.startSec())
                         .endSec(c.endSec())
                         .quote(abbreviate(c.text(), 120))
                         .build())
                 .toList();
-
-        return ChatResponse.builder()
-                .sessionId(session.id())
-                .reply(reply)
-                .citations(citations)
-                .history(chatMemoryStore.listMessages(session.id()))
-                .build();
     }
 
     public List<ChatMessageResponse> getSessionMessages(Long sessionId) {
@@ -139,5 +177,15 @@ public class ChatService {
             return "";
         }
         return text.length() <= max ? text : text.substring(0, max) + "...";
+    }
+
+    public record ChatStreamContext(Long sessionId,
+                                    String videoTitle,
+                                    String summaryText,
+                                    String transcriptExcerpt,
+                                    List<TranscriptIndexService.RetrievedChunk> chunks,
+                                    List<Map<String, String>> history,
+                                    String userMessage,
+                                    List<CitationResponse> citations) {
     }
 }

@@ -1,5 +1,5 @@
 import api from './client'
-import { getToken } from '../utils/auth'
+import { clearAuth, getToken } from '../utils/auth'
 
 export function uploadVideo(file) {
   const formData = new FormData()
@@ -66,6 +66,91 @@ export function exportMarkdown(id) {
 
 export function chat(videoId, message, sessionId) {
   return api.post(`/videos/${videoId}/chat`, { message, sessionId })
+}
+
+export async function chatStream(videoId, message, sessionId, onEvent, { signal } = {}) {
+  const token = getToken()
+  const response = await fetch(`/api/videos/${videoId}/chat/stream`, {
+    method: 'POST',
+    headers: {
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify({ message, sessionId }),
+    signal
+  })
+
+  if (!response.ok) {
+    await throwStreamRequestError(response)
+  }
+  if (!response.body) {
+    throw new Error('浏览器不支持流式响应')
+  }
+
+  await consumeEventStream(response.body, onEvent)
+}
+
+async function throwStreamRequestError(response) {
+  let message = `请求失败（${response.status}）`
+  try {
+    const data = await response.json()
+    if (data?.message) message = data.message
+  } catch {
+    // Keep the status-based fallback when the response is not JSON.
+  }
+
+  if (response.status === 401) {
+    clearAuth()
+    if (!window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login'
+    }
+  }
+  throw new Error(message)
+}
+
+async function consumeEventStream(stream, onEvent) {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+    buffer = buffer.replace(/\r\n/g, '\n')
+
+    let boundary = buffer.indexOf('\n\n')
+    while (boundary >= 0) {
+      dispatchEventBlock(buffer.slice(0, boundary), onEvent)
+      buffer = buffer.slice(boundary + 2)
+      boundary = buffer.indexOf('\n\n')
+    }
+    if (done) break
+  }
+
+  if (buffer.trim()) {
+    dispatchEventBlock(buffer, onEvent)
+  }
+}
+
+function dispatchEventBlock(block, onEvent) {
+  let eventName = 'message'
+  const dataLines = []
+
+  for (const line of block.split('\n')) {
+    if (line.startsWith('event:')) {
+      eventName = line.slice(6).trim()
+    } else if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trimStart())
+    }
+  }
+
+  if (!dataLines.length) return
+  const data = JSON.parse(dataLines.join('\n'))
+  if (eventName === 'error') {
+    throw new Error(data.message || '问答生成失败')
+  }
+  onEvent?.(eventName, data)
 }
 
 export function getChatHistory(videoId) {
