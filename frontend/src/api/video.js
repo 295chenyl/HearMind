@@ -121,7 +121,7 @@ async function consumeEventStream(stream, onEvent) {
 
     let boundary = buffer.indexOf('\n\n')
     while (boundary >= 0) {
-      dispatchEventBlock(buffer.slice(0, boundary), onEvent)
+      await dispatchEventBlock(buffer.slice(0, boundary), onEvent)
       buffer = buffer.slice(boundary + 2)
       boundary = buffer.indexOf('\n\n')
     }
@@ -129,11 +129,11 @@ async function consumeEventStream(stream, onEvent) {
   }
 
   if (buffer.trim()) {
-    dispatchEventBlock(buffer, onEvent)
+    await dispatchEventBlock(buffer, onEvent)
   }
 }
 
-function dispatchEventBlock(block, onEvent) {
+async function dispatchEventBlock(block, onEvent) {
   let eventName = 'message'
   const dataLines = []
 
@@ -150,7 +150,7 @@ function dispatchEventBlock(block, onEvent) {
   if (eventName === 'error') {
     throw new Error(data.message || '问答生成失败')
   }
-  onEvent?.(eventName, data)
+  await onEvent?.(eventName, data)
 }
 
 export function getChatHistory(videoId) {

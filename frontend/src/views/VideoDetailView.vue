@@ -361,27 +361,26 @@ async function sendMessage() {
   await nextTick()
   scrollChat()
 
-  let assistantMessage = null
-  let streamCitations = []
+  let assistantMessageIndex = -1
   const controller = new AbortController()
   chatAbortController = controller
 
   try {
-    await chatStream(videoId.value, content, sessionId.value, (event, data) => {
+    await chatStream(videoId.value, content, sessionId.value, async (event, data) => {
       if (event === 'meta') {
         sessionId.value = data.sessionId
-        streamCitations = data.citations || []
         localStorage.setItem(sessionStorageKey(), String(data.sessionId))
         return
       }
       if (event === 'delta') {
-        if (!assistantMessage) {
-          assistantMessage = { role: 'assistant', content: '', citations: streamCitations }
-          messages.value.push(assistantMessage)
+        if (assistantMessageIndex < 0) {
+          messages.value.push({ role: 'assistant', content: '', citations: [] })
+          assistantMessageIndex = messages.value.length - 1
           streamReplyStarted.value = true
         }
-        assistantMessage.content += data.content || ''
-        nextTick(scrollChat)
+        messages.value[assistantMessageIndex].content += data.content || ''
+        await nextTick()
+        scrollChat()
         return
       }
       if (event === 'done') {
@@ -565,6 +564,7 @@ onUnmounted(() => {
 
 .player-pane,
 .content-pane {
+  min-width: 0;
   background: rgba(14, 10, 22, 0.92);
   border: 1px solid rgba(106, 27, 154, 0.5);
   border-radius: 4px;
@@ -624,6 +624,7 @@ onUnmounted(() => {
 }
 
 .mode-body {
+  min-width: 0;
   height: calc(100vh - 100px);
   min-height: 400px;
   display: flex;
@@ -632,6 +633,7 @@ onUnmounted(() => {
 
 .mode-panel {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -781,11 +783,15 @@ onUnmounted(() => {
 }
 
 .chat-panel {
+  min-width: 0;
   padding: 0;
 }
 
 .chat-stream {
   flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 16px;
   display: flex;
@@ -811,6 +817,7 @@ onUnmounted(() => {
 
 .bubble-row {
   display: flex;
+  min-width: 0;
   max-width: 88%;
 }
 
@@ -823,15 +830,28 @@ onUnmounted(() => {
 }
 
 .bubble {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 10px 14px;
   border-radius: 12px;
   line-height: 1.65;
   font-size: 14px;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .bubble-text {
+  min-width: 0;
+  max-width: 100%;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-markdown {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .chat-markdown :deep(p) {
@@ -872,6 +892,17 @@ onUnmounted(() => {
   background: transparent;
 }
 
+.chat-markdown :deep(table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.chat-markdown :deep(img) {
+  max-width: 100%;
+  height: auto;
+}
+
 .bubble-row.user .bubble {
   background: rgba(255, 145, 0, 0.18);
   border: 1px solid rgba(255, 145, 0, 0.35);
@@ -894,6 +925,9 @@ onUnmounted(() => {
 }
 
 .citation-chip {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   text-align: left;
   padding: 6px 8px;
   font-size: 11px;
@@ -902,6 +936,8 @@ onUnmounted(() => {
   color: #ffcc80;
   border-radius: 4px;
   cursor: pointer;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .bubble.typing {
