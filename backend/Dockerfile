@@ -1,17 +1,16 @@
-# ---------- build ----------
+# ---------- build (Aliyun Maven mirror for ECS in China) ----------
 FROM maven:3.9-eclipse-temurin-17 AS builder
 WORKDIR /build
+COPY settings-docker.xml /root/.m2/settings.xml
 COPY pom.xml .
-RUN mvn -q dependency:go-offline -B
 COPY src ./src
-RUN mvn -q -DskipTests package -B
+RUN mvn -DskipTests package -B
 
 # ---------- runtime ----------
 FROM eclipse-temurin:17-jre-jammy
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates \
-    && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
-    && chmod a+rx /usr/local/bin/yt-dlp \
+    && apt-get install -y --no-install-recommends ffmpeg python3 python3-pip ca-certificates \
+    && pip3 install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple yt-dlp \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

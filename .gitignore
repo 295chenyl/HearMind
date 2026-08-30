@@ -19,6 +19,7 @@ config/bilibili.cookies.txt
 config/cookies.txt
 config/oss.yml
 .env
+.env.deploy
 *.log
 
 # 大媒体文件（本地测试产物）

@@ -34,7 +34,8 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     private String resolveRule(HttpServletRequest request) {
         String uri = request.getRequestURI();
         String method = request.getMethod();
-        if ("POST".equals(method) && pathMatcher.match("/api/videos/*/chat", uri)) {
+        if ("POST".equals(method) && (pathMatcher.match("/api/videos/*/chat", uri)
+                || pathMatcher.match("/api/videos/*/chat/stream", uri))) {
             return "chat";
         }
         if ("POST".equals(method) && pathMatcher.match("/api/videos/import-url", uri)) {

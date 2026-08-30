@@ -83,12 +83,103 @@ HearMind
 
 
 
-3. git 管理项目、github上传仓库
-4. 服务上线与部署 Docker
-5. RAG处理
-6. jwt 登录
-7. cookie session
-8. 断点续传，异步上传，
-9. 会话记忆
-10. 运维知识
+--------------------------------------------------------------------------------------------------------------------------------------
+
+3. git 管理项目、github上传仓库 
+
+   ![image-20260616174638506](C:\Users\33710\AppData\Roaming\Typora\typora-user-images\image-20260616174638506.png)
+
+修改代码 → **`add`** (放进篮子) → **`commit`** (存入箱子) → **`push`** (寄给远方)
+
+```
+# 单个文件
+git add Demo.java
+# 全部文件
+git add .
+# 仅新增/修改文件，忽略删除
+git add --update
+
+git commit -m "feat: 用户模块新增接口"
+# 跳过add，直接提交已追踪文件
+git commit -am "fix: 修复分页bug"
+
+git push origin main
+# 首次推送关联分支
+git push -u origin main
+
+# 创建分支
+git branch dev
+# 切换分支
+git checkout dev
+# 创建并立刻切换（简写）
+git checkout -b dev
+# git 2.23+ 新命令
+git switch -c dev
+git switch main
+
+git add 常用
+-u：更新已追踪文件（修改 / 删除），不包含新建文件 git add -u
+-i：交互式选择部分文件提交 git add -i
+-p：按代码块分段添加，精准提交部分改动 git add -p
+git log 常用
+--oneline 简写无单字母，常用组合：git log --oneline --graph
+-p：展示每次提交的代码 diff 详情 git log -p
+-n：只展示最近 N 条日志 git log -n 5
+git checkout / switch
+-b：创建并切换新分支 git checkout -b dev
+git stash
+-m：储藏时添加备注 git stash save -m "临时保存前端页面"
+```
+
+
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+3. 服务上线与部署 Docker
+
+
+
+
+
+
+
+
+
+3. RAG处理
+
+
+
+
+
+
+
+3. jwt 登录
+
+
+
+
+
+3. cookie session
+
+
+
+
+
+3. 断点续传，异步上传，
+
+
+
+
+
+3. 会话记忆
+
+
+
+
+
+3. 运维知识
 

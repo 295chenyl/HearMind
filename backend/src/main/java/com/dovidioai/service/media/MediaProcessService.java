@@ -13,26 +13,31 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
 public class MediaProcessService {
+
+    private static final Pattern JSON_DURATION = Pattern.compile("\"duration\"\\s*:\\s*\"([0-9.]+)\"");
 
     private final AppProperties appProperties;
 
     public double probeDurationSeconds(Path mediaPath) {
         List<String> command = List.of(
                 appProperties.getFfprobePath(),
-                "-v", "error",
+                "-v", "quiet",
+                "-print_format", "json",
                 "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
                 mediaPath.toAbsolutePath().toString()
         );
-        String output = runProcessWithOutput(command, 120, "ffprobe 读取时长失败");
-        if (output.isBlank()) {
-            throw new BusinessException("无法读取视频时长");
+        String output = runProcessStdout(command, 120, "ffprobe 读取时长失败");
+        Matcher matcher = JSON_DURATION.matcher(output);
+        if (matcher.find()) {
+            return Double.parseDouble(matcher.group(1));
         }
-        return Double.parseDouble(output.trim());
+        throw new BusinessException("无法读取视频时长");
     }
 
     public void validateDuration(Path mediaPath) {
@@ -44,17 +49,25 @@ public class MediaProcessService {
     }
 
     public void validateHasAudioStream(Path mediaPath) {
+        if (!hasAudioStream(mediaPath)) {
+            throw new BusinessException("视频中未检测到音频轨道，无法转写");
+        }
+    }
+
+    public boolean hasAudioStream(Path mediaPath) {
         List<String> command = List.of(
                 appProperties.getFfprobePath(),
-                "-v", "error",
-                "-select_streams", "a:0",
+                "-v", "quiet",
+                "-select_streams", "a",
                 "-show_entries", "stream=codec_type",
-                "-of", "default=noprint_wrappers=1:nokey=1",
+                "-of", "csv=p=0",
                 mediaPath.toAbsolutePath().toString()
         );
-        String output = runProcessWithOutput(command, 60, "ffprobe 检测音轨失败");
-        if (!"audio".equalsIgnoreCase(output.trim())) {
-            throw new BusinessException("视频中未检测到音频轨道，无法转写");
+        try {
+            String output = runProcessStdout(command, 60, "ffprobe 检测音轨失败");
+            return output.lines().anyMatch(line -> "audio".equalsIgnoreCase(line.trim()));
+        } catch (BusinessException e) {
+            return false;
         }
     }
 
@@ -67,6 +80,8 @@ public class MediaProcessService {
 
         List<String> command = List.of(
                 appProperties.getFfmpegPath(),
+                "-hide_banner",
+                "-loglevel", "error",
                 "-y",
                 "-i", videoPath.toAbsolutePath().toString(),
                 "-vn",
@@ -93,6 +108,39 @@ public class MediaProcessService {
             return mediaPath;
         }
         return extractAudio(mediaPath, outputPath);
+    }
+
+    private String runProcessStdout(List<String> command, long timeoutSeconds, String errorPrefix) {
+        try {
+            ProcessBuilder builder = new ProcessBuilder(command);
+            builder.redirectError(ProcessBuilder.Redirect.DISCARD);
+            Process process = builder.start();
+            String stdout;
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), Charset.defaultCharset()))) {
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line).append('\n');
+                }
+                stdout = sb.toString().trim();
+            }
+            boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                throw new BusinessException(errorPrefix + ": 执行超时（" + timeoutSeconds + " 秒）");
+            }
+            if (process.exitValue() != 0) {
+                throw new BusinessException(errorPrefix + ": ffprobe 退出码 " + process.exitValue());
+            }
+            if (stdout.isBlank()) {
+                throw new BusinessException(errorPrefix + ": 无输出");
+            }
+            return stdout;
+        } catch (IOException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException(errorPrefix + ": " + e.getMessage());
+        }
     }
 
     private String runProcessWithOutput(List<String> command, long timeoutSeconds, String errorPrefix) {

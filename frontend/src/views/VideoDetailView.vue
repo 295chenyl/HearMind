@@ -124,7 +124,7 @@
                   </div>
                 </div>
               </div>
-              <div v-if="chatting" class="bubble-row assistant">
+              <div v-if="chatting && !streamReplyStarted" class="bubble-row assistant">
                 <div class="bubble typing">思考中…</div>
               </div>
             </div>
@@ -158,7 +158,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  chat,
+  chatStream,
   exportMarkdown,
   getChatHistory,
   getSummary,
@@ -188,6 +188,7 @@ const question = ref('')
 const messages = ref([])
 const sessionId = ref(null)
 const chatting = ref(false)
+const streamReplyStarted = ref(false)
 const retrying = ref(false)
 const chatBoxRef = ref(null)
 const videoRef = ref(null)
@@ -195,6 +196,7 @@ const summaryDraft = ref('')
 const summaryEditing = ref(false)
 const savingSummary = ref(false)
 let pollTimer = null
+let chatAbortController = null
 
 const streamUrl = computed(() => getVideoStreamUrl(videoId.value))
 const exportUrl = computed(() => exportMarkdown(videoId.value))
@@ -351,32 +353,67 @@ async function retryProcess() {
 async function sendMessage() {
   if (!question.value.trim()) return
   chatting.value = true
+  streamReplyStarted.value = false
   const content = question.value.trim()
   question.value = ''
+  const messageStartIndex = messages.value.length
   messages.value.push({ role: 'user', content })
   await nextTick()
   scrollChat()
 
+  let assistantMessageIndex = -1
+  const controller = new AbortController()
+  chatAbortController = controller
+
   try {
-    const { data } = await chat(videoId.value, content, sessionId.value)
-    sessionId.value = data.sessionId
-    localStorage.setItem(sessionStorageKey(), String(data.sessionId))
-    messages.value = data.history.map((m, i) => ({
-      role: m.role,
-      content: m.content,
-      citations: i === data.history.length - 1 && m.role === 'assistant'
-        ? (data.citations || [])
-        : (m.citations || [])
-    }))
-    saveCitations(data.citations)
+    await chatStream(videoId.value, content, sessionId.value, async (event, data) => {
+      if (event === 'meta') {
+        sessionId.value = data.sessionId
+        localStorage.setItem(sessionStorageKey(), String(data.sessionId))
+        return
+      }
+      if (event === 'delta') {
+        if (assistantMessageIndex < 0) {
+          messages.value.push({ role: 'assistant', content: '', citations: [] })
+          assistantMessageIndex = messages.value.length - 1
+          streamReplyStarted.value = true
+        }
+        messages.value[assistantMessageIndex].content += data.content || ''
+        await nextTick()
+        scrollChat()
+        return
+      }
+      if (event === 'done') {
+        applyCompletedChat(data)
+      }
+    }, { signal: controller.signal })
     await nextTick()
     scrollChat()
   } catch (e) {
-    ElMessage.error(e.message)
-    messages.value.pop()
+    messages.value.splice(messageStartIndex)
+    if (e.name !== 'AbortError') {
+      ElMessage.error(e.message)
+    }
   } finally {
+    if (chatAbortController === controller) {
+      chatAbortController = null
+    }
     chatting.value = false
+    streamReplyStarted.value = false
   }
+}
+
+function applyCompletedChat(data) {
+  sessionId.value = data.sessionId
+  localStorage.setItem(sessionStorageKey(), String(data.sessionId))
+  messages.value = data.history.map((message, index) => ({
+    role: message.role,
+    content: message.content,
+    citations: index === data.history.length - 1 && message.role === 'assistant'
+      ? (data.citations || [])
+      : (message.citations || [])
+  }))
+  saveCitations(data.citations)
 }
 
 function scrollChat() {
@@ -431,6 +468,7 @@ watch(activeMode, (mode) => {
 })
 
 watch(videoId, () => {
+  chatAbortController?.abort()
   messages.value = []
   sessionId.value = null
   summaryDraft.value = ''
@@ -440,7 +478,10 @@ watch(videoId, () => {
 })
 
 onMounted(refresh)
-onUnmounted(stopPoll)
+onUnmounted(() => {
+  chatAbortController?.abort()
+  stopPoll()
+})
 </script>
 
 <style scoped>
@@ -523,6 +564,7 @@ onUnmounted(stopPoll)
 
 .player-pane,
 .content-pane {
+  min-width: 0;
   background: rgba(14, 10, 22, 0.92);
   border: 1px solid rgba(106, 27, 154, 0.5);
   border-radius: 4px;
@@ -582,6 +624,7 @@ onUnmounted(stopPoll)
 }
 
 .mode-body {
+  min-width: 0;
   height: calc(100vh - 100px);
   min-height: 400px;
   display: flex;
@@ -590,6 +633,7 @@ onUnmounted(stopPoll)
 
 .mode-panel {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -739,11 +783,15 @@ onUnmounted(stopPoll)
 }
 
 .chat-panel {
+  min-width: 0;
   padding: 0;
 }
 
 .chat-stream {
   flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 16px;
   display: flex;
@@ -769,6 +817,7 @@ onUnmounted(stopPoll)
 
 .bubble-row {
   display: flex;
+  min-width: 0;
   max-width: 88%;
 }
 
@@ -781,15 +830,28 @@ onUnmounted(stopPoll)
 }
 
 .bubble {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 10px 14px;
   border-radius: 12px;
   line-height: 1.65;
   font-size: 14px;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .bubble-text {
+  min-width: 0;
+  max-width: 100%;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-markdown {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .chat-markdown :deep(p) {
@@ -830,6 +892,17 @@ onUnmounted(stopPoll)
   background: transparent;
 }
 
+.chat-markdown :deep(table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.chat-markdown :deep(img) {
+  max-width: 100%;
+  height: auto;
+}
+
 .bubble-row.user .bubble {
   background: rgba(255, 145, 0, 0.18);
   border: 1px solid rgba(255, 145, 0, 0.35);
@@ -852,6 +925,9 @@ onUnmounted(stopPoll)
 }
 
 .citation-chip {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   text-align: left;
   padding: 6px 8px;
   font-size: 11px;
@@ -860,6 +936,8 @@ onUnmounted(stopPoll)
   color: #ffcc80;
   border-radius: 4px;
   cursor: pointer;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .bubble.typing {

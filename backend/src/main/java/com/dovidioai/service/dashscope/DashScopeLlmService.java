@@ -13,11 +13,15 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 @Service
 @RequiredArgsConstructor
@@ -38,6 +42,25 @@ public class DashScopeLlmService {
     public String chatWithRagContext(String videoTitle, String summary, String transcriptExcerpt,
                                      List<RetrievedChunk> chunks,
                                      List<Map<String, String>> history, String userMessage) {
+        return chatRaw(buildChatMessages(
+                videoTitle, summary, transcriptExcerpt, chunks, history, userMessage
+        ));
+    }
+
+    public String chatWithRagContextStream(String videoTitle, String summary, String transcriptExcerpt,
+                                           List<RetrievedChunk> chunks,
+                                           List<Map<String, String>> history, String userMessage,
+                                           Consumer<String> chunkConsumer) {
+        return chatRawStream(buildChatMessages(
+                videoTitle, summary, transcriptExcerpt, chunks, history, userMessage
+        ), chunkConsumer);
+    }
+
+    private List<Map<String, String>> buildChatMessages(String videoTitle, String summary,
+                                                         String transcriptExcerpt,
+                                                         List<RetrievedChunk> chunks,
+                                                         List<Map<String, String>> history,
+                                                         String userMessage) {
         String chunksBlock = buildRetrievedChunksBlock(chunks, transcriptExcerpt);
 
         String systemPrompt = CHAT_ASSISTANT_PROMPT + """
@@ -64,7 +87,7 @@ public class DashScopeLlmService {
         messages.addAll(history);
         String question = userMessage != null && !userMessage.isBlank() ? userMessage : "请对这篇音视频内容进行总结概括。";
         messages.add(Map.of("role", "user", "content", question));
-        return chatRaw(messages);
+        return messages;
     }
 
     private String buildRetrievedChunksBlock(List<RetrievedChunk> chunks, String transcriptExcerpt) {
@@ -183,41 +206,112 @@ public class DashScopeLlmService {
     }
 
     private String chatRaw(List<Map<String, String>> messages) {
-        if (properties.getApiKey() == null || properties.getApiKey().isBlank()) {
-            properties.validateApiKeyConfigured();
-        }
-
-        Map<String, Object> input = new HashMap<>();
-        input.put("messages", messages);
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("model", properties.getLlmModel());
-        body.put("input", input);
-        body.put("parameters", Map.of("result_format", "message"));
+        validateApiKey();
 
         String response = retry.execute("DashScope LLM", () -> restClient.post()
                 .uri(properties.getApiBaseUrl() + "/services/aigc/text-generation/generation")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.getApiKey())
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                .body(body)
+                .body(buildRequestBody(messages, false))
                 .retrieve()
                 .body(String.class));
 
         try {
-            JsonNode root = objectMapper.readTree(response);
-            if (root.has("code") && !root.path("code").asText("").isBlank()) {
-                throw new BusinessException("LLM 调用失败: " + root.path("message").asText(response));
-            }
-            JsonNode content = root.path("output").path("choices").path(0).path("message").path("content");
-            if (content.isTextual()) {
-                return content.asText("");
-            }
-            if (content.isArray() && !content.isEmpty()) {
-                return content.get(0).path("text").asText(content.toString());
-            }
-            return root.path("output").path("text").asText("");
+            return extractResponseContent(objectMapper.readTree(response), response);
         } catch (IOException e) {
             throw new BusinessException("解析 LLM 响应失败: " + e.getMessage());
+        }
+    }
+
+    private String chatRawStream(List<Map<String, String>> messages, Consumer<String> chunkConsumer) {
+        validateApiKey();
+        return restClient.post()
+                .uri(properties.getApiBaseUrl() + "/services/aigc/text-generation/generation")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.getApiKey())
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .header(HttpHeaders.ACCEPT, MediaType.TEXT_EVENT_STREAM_VALUE)
+                .header("X-DashScope-SSE", "enable")
+                .body(buildRequestBody(messages, true))
+                .exchange((request, response) -> readStreamResponse(response, chunkConsumer));
+    }
+
+    private String readStreamResponse(org.springframework.http.client.ClientHttpResponse response,
+                                      Consumer<String> chunkConsumer) {
+        try {
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                String body = new String(response.getBody().readAllBytes(), StandardCharsets.UTF_8);
+                throw new BusinessException("LLM 调用失败: " + body);
+            }
+
+            StringBuilder reply = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    response.getBody(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (!line.startsWith("data:")) {
+                        continue;
+                    }
+                    String delta = parseStreamData(line.substring(5).trim());
+                    if (!delta.isEmpty()) {
+                        reply.append(delta);
+                        chunkConsumer.accept(delta);
+                    }
+                }
+            }
+            if (reply.isEmpty()) {
+                throw new BusinessException("LLM 流式响应为空");
+            }
+            return reply.toString();
+        } catch (IOException e) {
+            throw new BusinessException("读取 LLM 流式响应失败: " + e.getMessage());
+        }
+    }
+
+    String parseStreamData(String data) {
+        if (data == null || data.isBlank() || "[DONE]".equals(data)) {
+            return "";
+        }
+        try {
+            return extractResponseContent(objectMapper.readTree(data), data);
+        } catch (IOException e) {
+            throw new BusinessException("解析 LLM 流式响应失败: " + e.getMessage());
+        }
+    }
+
+    private String extractResponseContent(JsonNode root, String rawResponse) {
+        if (root.has("code") && !root.path("code").asText("").isBlank()) {
+            throw new BusinessException("LLM 调用失败: " + root.path("message").asText(rawResponse));
+        }
+        JsonNode content = root.path("output").path("choices").path(0).path("message").path("content");
+        if (content.isTextual()) {
+            return content.asText("");
+        }
+        if (content.isArray() && !content.isEmpty()) {
+            return content.get(0).path("text").asText(content.toString());
+        }
+        return root.path("output").path("text").asText("");
+    }
+
+    private Map<String, Object> buildRequestBody(List<Map<String, String>> messages, boolean streaming) {
+        Map<String, Object> input = new HashMap<>();
+        input.put("messages", messages);
+
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("result_format", "message");
+        if (streaming) {
+            parameters.put("incremental_output", true);
+        }
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("model", properties.getLlmModel());
+        body.put("input", input);
+        body.put("parameters", parameters);
+        return body;
+    }
+
+    private void validateApiKey() {
+        if (properties.getApiKey() == null || properties.getApiKey().isBlank()) {
+            properties.validateApiKeyConfigured();
         }
     }
 
